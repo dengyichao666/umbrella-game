@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>大五人格雨伞翻翻乐</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html,body{
+    width:100%;height:100%;
+    background:#222630;
+    font-family:Microsoft YaHei,sans-serif;
+    overflow:hidden;
+  }
+  .hud{
+    position:fixed;top:12px;left:0;right:0;
+    display:flex;justify-content:space-between;
+    padding:0 24px;color:#fff;font-size:20px;font-weight:bold;
+    z-index:10;pointer-events:none;
+  }
+  .container{
+    width:100vw;height:100vh;
+    display:grid;
+    place-items:center;
+    padding:80px 20px 20px;
+  }
+  .card-wrap{
+    display:grid;
+    grid-template-columns: repeat(4, 140px);
+    gap:16px;
+  }
+  .card{
+    width:140px;height:180px;
+    perspective: 1000px;
+    cursor:pointer;
+  }
+  .card-inner{
+    width:100%;height:100%;
+    position:relative;
+    transition: transform 0.6s;
+    transform-style: preserve-3d;
+  }
+  .card.flipped .card-inner{
+    transform: rotateY(180deg);
+  }
+  .card-front,.card-back{
+    position:absolute;width:100%;height:100%;
+    backface-visibility:hidden;
+    border-radius:12px;
+    display:grid;place-items:center;
+    padding:8px;
+  }
+  .card-back{
+    background:#11141a;
+    border:2px solid #444;
+    font-size:70px;
+    color:#333;
+  }
+  .card-front{
+    transform: rotateY(180deg);
+    border:2px solid #eee;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+  }
+  .umbrella-icon{
+    font-size:64px;margin-bottom:6px;
+  }
+  .card-name{
+    font-weight:bold;font-size:14px;color:#111;
+  }
+  .card-desc{
+    font-size:11px;color:#333;margin-top:3px;
+  }
+  .type0{background:#ffdd44;}
+  .type1{background:#e62c2c;}
+  .type2{background:#244b82; color:#fff;}
+  .type2 .card-name,.type2 .card-desc{color:#fff;}
+  .type3{background:#73c273;}
+  .type4{background:#9955bb; color:#fff;}
+  .type4 .card-name,.type4 .card-desc{color:#fff;}
+
+  .overlay{
+    position:fixed;inset:0;background:rgba(0,0,0,0.65);
+    display:flex;align-items:center;justify-content:center;z-index:20;
+  }
+  .panel{
+    background:#fff;padding:32px;border-radius:16px;text-align:center;
+    min-width:380px;
+  }
+  .panel h2{margin-bottom:12px;color:#222;}
+  .reason-text{
+    background:#f4f7fb;
+    padding:12px;
+    border-radius:8px;
+    margin:10px 0;
+    font-size:14px;
+    line-height:1.6;
+    text-align:left;
+  }
+  .stat-text{
+    font-size:12px;color:#666;margin:8px 0;
+  }
+  .tips{
+    background:#f0f4f8;padding:10px;border-radius:8px;margin:14px 0;
+    text-align:left;font-size:14px;line-height:1.6;
+  }
+  button{
+    background:#2754aa;color:#fff;border:none;
+    padding:12px 28px;border-radius:10px;font-size:17px;cursor:pointer;
+  }
+  #endOverlay{display:none;}
+</style>
+</head>
+<body>
+<div class="hud">
+  <div>得分：<span id="score">0</span></div>
+  <div>配对剩余：<span id="remain">0</span></div>
+</div>
+
+<div class="overlay" id="startOverlay">
+  <div class="panel">
+    <h2>☂️大五人格 · 雨伞翻翻乐</h2>
+    <div class="tips">
+      游戏规则：点击卡牌翻开雨伞<br>
+      ✅翻开两张完全一样的伞，配对消除得分<br>
+      ❌不一样就会自动翻回去<br>
+      全部配对完成，趣味测算你的人格雨伞
+    </div>
+    <button id="startBtn">开始游戏</button>
+  </div>
+</div>
+
+<div class="overlay" id="endOverlay">
+  <div class="panel">
+    <h2>☂你的人格雨伞测评结果</h2>
+    <div class="reason-text" id="reasonBox"></div>
+    <div class="stat-text" id="statBox"></div>
+    <br>
+    <button id="restartBtn">再来一局</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="card-wrap" id="cardBox"></div>
+</div>
+
+<script>
+(()=>{
+  const cardBox = document.getElementById('cardBox');
+  const scoreDom = document.getElementById('score');
+  const remainDom = document.getElementById('remain');
+  const startOverlay = document.getElementById('startOverlay');
+  const endOverlay = document.getElementById('endOverlay');
+  const startBtn = document.getElementById('startBtn');
+  const restartBtn = document.getElementById('restartBtn');
+  const reasonBox = document.getElementById('reasonBox');
+  const statBox = document.getElementById('statBox');
+
+  const umbrellaList = [
+    {
+      type:0,icon:"☂",name:"破局者",desc:"开放性｜创意好奇",
+      reason:"👉你尝试探索的点击次数较多，愿意大胆试错，代表好奇心强，乐于接纳新想法，是团队的点子来源。"
+    },
+    {
+      type:1,icon:"☂",name:"社交狂热者",desc:"外向性｜热情活跃",
+      reason:"👉你通关速度很快，操作节奏急促，代表精力充沛，行动干脆，喜欢快速推进事情，是天生行动派。"
+    },
+    {
+      type:2,icon:"☂",name:"理性守望者",desc:"尽责+情绪稳定｜靠谱冷静",
+      reason:"👉你的错误次数很少，善于记忆卡牌位置，做事稳重有条理，遇事冷静，是团队里值得信赖的可靠角色。"
+    },
+    {
+      type:3,icon:"☂",name:"和平守护者",desc:"宜人性｜共情包容",
+      reason:"👉你的整体节奏平缓，犯错不多不少，心态从容，待人温和包容，善于顾及整体氛围，是团队的润滑剂。"
+    },
+    {
+      type:4,icon:"☂",name:"灵感画师",desc:"高敏感性｜细腻感性",
+      reason:"👉本局耗时较长、错误偏多，代表你心思细腻敏感，容易留意细节，情感丰富，拥有很强的感知力。"
+    },
+  ];
+
+  let cardArr = [];
+  let openCards = [];
+  let lock = false;
+  let score = 0;
+  let totalPair;
+
+  let gameStartTime;
+  let totalClickCount = 0;
+  let errorCount = 0;
+
+  function shuffle(arr){
+    let a=[...arr];
+    for(let i=a.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [a[i],a[j]] = [a[j],a[i]];
+    }
+    return a;
+  }
+
+  function buildGame(){
+    score=0;openCards=[];lock=false;
+    totalClickCount = 0;
+    errorCount = 0;
+    gameStartTime = Date.now();
+    let raw = [];
+    umbrellaList.forEach(item=>{
+      raw.push({...item});
+      raw.push({...item});
+    })
+    cardArr = shuffle(raw);
+    totalPair = cardArr.length/2;
+    scoreDom.innerText = score;
+    remainDom.innerText = totalPair;
+    cardBox.innerHTML="";
+    cardArr.forEach((data,idx)=>{
+      const div = document.createElement('div');
+      div.className="card";
+      div.dataset.idx=idx;
+      div.dataset.type=data.type;
+      div.innerHTML=`
+        <div class="card-inner">
+          <div class="card-back">☂</div>
+          <div class="card-front type${data.type}">
+            <div class="umbrella-icon">${data.icon}</div>
+            <div class="card-name">${data.name}</div>
+            <div class="card-desc">${data.desc}</div>
+          </div>
+        </div>
+      `;
+      div.onclick=()=>clickCard(div);
+      cardBox.appendChild(div);
+    })
+  }
+
+  function clickCard(el){
+    if(lock) return;
+    if(el.classList.contains('flipped')) return;
+    totalClickCount +=1;
+    el.classList.add('flipped');
+    openCards.push(el);
+    if(openCards.length===2){
+      lock=true;
+      const c1 = openCards[0];
+      const c2 = openCards[1];
+      const t1 = c1.dataset.type;
+      const t2 = c2.dataset.type;
+      if(t1 === t2){
+        score+=10;
+        totalPair -=1;
+        scoreDom.innerText=score;
+        remainDom.innerText=totalPair;
+        setTimeout(()=>{
+          c1.style.visibility="hidden";
+          c2.style.visibility="hidden";
+          openCards=[];lock=false;
+          if(totalPair <=0){
+            const costSecond = (Date.now() - gameStartTime)/1000;
+            showPersonResult(costSecond,totalClickCount,errorCount);
+          }
+        },600);
+      }else{
+        errorCount +=1;
+        setTimeout(()=>{
+          c1.classList.remove('flipped');
+          c2.classList.remove('flipped');
+          openCards=[];lock=false;
+        },1000);
+      }
+    }
+  }
+
+  function showPersonResult(costSec,clickCnt,errCnt){
+    let resIndex;
+    if(errCnt <=2){
+      resIndex = 2;
+    }else if(costSec>60 && errCnt >=4){
+      resIndex =4;
+    }else if(clickCnt>22 && errCnt>=3){
+      resIndex=0;
+    }else if(costSec <32){
+      resIndex=1;
+    }else{
+      resIndex=3;
+    }
+    const person = umbrellaList[resIndex];
+    reasonBox.innerHTML = `<b>${person.icon} ${person.name}</b><br>${person.desc}<br><br>${person.reason}`;
+    statBox.innerText = `趣味课堂娱乐测算｜用时：${costSec.toFixed(1)}秒｜点击：${clickCnt}次｜错误：${errCnt}次`;
+    endOverlay.style.display="flex";
+  }
+
+  function startGame(){
+    buildGame();
+    startOverlay.style.display="none";
+    endOverlay.style.display="none";
+  }
+
+  startBtn.onclick = startGame;
+  restartBtn.onclick = startGame;
+})();
+</script>
+</body>
+</html>
