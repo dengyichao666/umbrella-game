@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>变色龙大逃亡</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#111;color:#fff;font-family:system-ui,Arial;overflow:hidden}
+#gameBox{width:100vw;height:100vh;position:relative}
+#chameleon{width:48px;height:48px;background:#2ecc71;border-radius:50%;position:absolute;z-index:10;transition:0.08s left,0.08s top}
+.obstacle{position:absolute;width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-size:24px}
+.ball{position:absolute;width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:32px}
+#tip{position:absolute;top:10px;left:50%;transform:translateX(-50%);font-size:22px;z-index:20}
+#stageText{position:absolute;top:45px;left:50%;transform:translateX(-50%);font-size:26px;color:#ffd700;z-index:20}
+#ui{position:absolute;top:80px;left:10px;font-size:18px;z-index:20}
+#overPanel{position:absolute;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:30;display:none;flex-direction:column;align-items:center;justify-content:center;gap:24px}
+button{padding:12px 24px;font-size:18px;border:none;border-radius:8px;cursor:pointer;background:#27ae60;color:white}
+</style>
+</head>
+<body>
+<div id="gameBox">
+    <div id="tip"></div>
+    <div id="stageText"></div>
+    <div id="ui">
+        <div>剩余时间：<span id="time">60</span>s</div>
+        <div>撞击次数：<span id="hit">0</span>/3</div>
+        <div>适应力得分：<span id="score">0</span></div>
+    </div>
+    <div id="chameleon"></div>
+    <div id="overPanel">
+        <div id="overMsg" style="font-size:32px"></div>
+        <button id="reviveBtn">免费复活一次</button>
+        <button id="restartBtn">重新开始游戏</button>
+    </div>
+</div>
+
+<script>
+const gameBox=document.getElementById('gameBox');
+const cham=document.getElementById('chameleon');
+const tip=document.getElementById('tip');
+const stageText=document.getElementById('stageText');
+const timeDom=document.getElementById('time');
+const hitDom=document.getElementById('hit');
+const scoreDom=document.getElementById('score');
+const overPanel=document.getElementById('overPanel');
+const overMsg=document.getElementById('overMsg');
+const reviveBtn=document.getElementById('reviveBtn');
+const restartBtn=document.getElementById('restartBtn');
+
+let chamX=window.innerWidth/2, chamY=window.innerHeight-120;
+const speed=8;
+let timeLeft=60;
+let hitCount=0;
+let score=0;
+let stage=1;
+let gameOver=false;
+let reviveUsed=false;
+let obstacleList=[];
+let ballList=[];
+
+cham.style.left=chamX+'px';
+cham.style.top=chamY+'px';
+
+const keys={};
+window.addEventListener('keydown',e=>keys[e.key]=true);
+window.addEventListener('keyup',e=>keys[e.key]=false);
+
+function moveCham(){
+    if(gameOver) return;
+    const w=window.innerWidth-60;
+    const h=window.innerHeight-60;
+    if(keys['ArrowLeft']) chamX=Math.max(0,chamX-speed);
+    if(keys['ArrowRight']) chamX=Math.min(w,chamX+speed);
+    if(keys['ArrowUp']) chamY=Math.max(0,chamY-speed);
+    if(keys['ArrowDown']) chamY=Math.min(h,chamY+speed);
+    cham.style.left=chamX+'px';
+    cham.style.top=chamY+'px';
+}
+
+function spawnObstacle(type){
+    const el=document.createElement('div');
+    el.className='obstacle';
+    if(type==='q'){el.textContent='？';el.style.background='#222'}
+    else if(type==='socialRed'){el.textContent='社交';el.style.background='#c0392b'}
+    else if(type==='socialBlack'){el.textContent='独处';el.style.background='#333'}
+    else if(type==='book'){el.textContent='📚';el.style.background='#34495e'}
+    else if(type==='umbrella'){el.textContent='☂';el.style.background='#222'}
+    el.style.left=(Math.random()*(window.innerWidth-60))+'px';
+    el.style.top='-50px';
+    gameBox.appendChild(el);
+    obstacleList.push({el,y:-50,type});
+}
+
+function spawnBall(type){
+    const el=document.createElement('div');
+    el.className='ball';
+    if(type==='bulb'){el.textContent='💡'}
+    else if(type==='gold'){el.textContent='✨'}
+    else if(type==='yellowUmbrella'){el.textContent='🌂';el.style.fontSize='36px'}
+    el.style.left=(Math.random()*(window.innerWidth-80))+'px';
+    el.style.top='-60px';
+    gameBox.appendChild(el);
+    ballList.push({el,y:-60,type});
+}
+
+function checkCollision(a){
+    const ax=parseFloat(a.el.style.left),ay=parseFloat(a.el.style.top);
+    return Math.abs(ax-chamX)<36 && Math.abs(ay-chamY)<36;
+}
+
+function setStage(s){
+    stage=s;
+    obstacleList.forEach(o=>o.el.remove());obstacleList=[];
+    ballList.forEach(b=>b.el.remove());ballList=[];
+    if(s===1){
+        stageText.innerText="第一阶段：迷雾重重的开局【自我觉察】";
+         tip.innerText="躲避黑色问号障碍物，寻找💡灯泡";
+     }else if(s===2){
+         stageText.innerText="第二阶段：社交的碰撞【社交能力】";
+         tip.innerText="左右穿梭，躲避社交/独处结界";
+     }else if(s===3){
+         stageText.innerText="第三阶段：试卷的轰炸【主动学习】";
+         tip.innerText="躲避书本咖啡，拾取金色光环获得无敌";
+     }else if(s===4){
+         stageText.innerText="终极阶段：黄伞的抉择【大五人格】";
+         tip.innerText="伞海之中找到唯一金色黄伞🌂";
+     }
+ }
+ function showOver(msg,canRevive){
+     gameOver=true;
+     overMsg.innerText=msg;
+     overPanel.style.display='flex';
+     reviveBtn.style.display=canRevive?'block':'none';
+ }
+ reviveBtn.onclick=()=>{
+     hitCount=0;hitDom.innerText=hitCount;
+     overPanel.style.display='none';
+     gameOver=false;
+     reviveUsed=true;
+     reviveBtn.style.display='none';
+ }
+ restartBtn.onclick=()=>location.reload();
+ function startGameLoop(){
+     setStage(1);
+     setInterval(()=>{
+         if(gameOver) return;
+         timeLeft--;timeDom.innerText=timeLeft;
+         if(timeLeft<=0){
+             showOver(`游戏结束！你的适应力得分：${score}`,false);
+         }
+     },1000);
+     setTimeout(()=>{setStage(2)},15000);
+     setTimeout(()=>{setStage(3)},30000);
+     setTimeout(()=>{setStage(4)},45000);
+     setInterval(()=>{
+         moveCham();
+         if(gameOver) return;
+         if(stage===1 && Math.random()<0.04) spawnObstacle('q');
+         if(stage===2 && Math.random()<0.035) spawnObstacle(Math.random()>0.5?'socialRed':'socialBlack');
+         if(stage===3 && Math.random()<0.04) spawnObstacle('book');
+         if(stage===4 && Math.random()<0.05) spawnObstacle('umbrella');
+         if(stage===1 && ballList.filter(b=>b.type==='bulb').length===0 && Math.random()<0.006) spawnBall('bulb');
+         if(stage===3 && ballList.filter(b=>b.type==='gold').length===0 && Math.random()<0.006) spawnBall('gold');
+         if(stage===4 && ballList.filter(b=>b.type==='yellowUmbrella').length===0) spawnBall('yellowUmbrella');
+         for(let i=obstacleList.length-1;i>=0;i--){
+             const o=obstacleList[i];
+             o.y+=2.2;o.el.style.top=o.y+'px';
+             if(checkCollision(o)){
+                 hitCount++;hitDom.innerText=hitCount;
+                 o.el.remove();obstacleList.splice(i,1);
+                 if(hitCount>=3){
+                     showOver('你的适应力告急！',!reviveUsed);
+                 }
+                 continue;
+             }
+             if(o.y>window.innerHeight){o.el.remove();obstacleList.splice(i,1);score+=5;scoreDom.innerText=score;}
+         }
+         for(let i=ballList.length-1;i>=0;i--){
+             const b=ballList[i];
+             b.y+=1.8;b.el.style.top=b.y+'px';
+             if(checkCollision(b)){
+                 if(b.type==='bulb'){
+                     tip.innerText="自我觉察觉醒！你找到了方向。";
+                     obstacleList.forEach(x=>x.el.remove());obstacleList=[];
+                     score+=100;scoreDom.innerText=score;
+                 }else if(b.type==='gold'){
+                     tip.innerText="拒绝摆烂，你掌握了主动学习的秘籍。";
+                     cham.style.boxShadow="0 0 14px gold";
+                     score+=100;scoreDom.innerText=score;
+                     setTimeout(()=>cham.style.boxShadow='none',3500);
+                 }else if(b.type==='yellowUmbrella'){
+                     tip.innerText="在人群中，你保持了自己“特殊”的底色，大五人格测试完美通关！";
+                     score+=300;scoreDom.innerText=score;
+                     showOver(`🎉完美通关！适应力得分：${score}`,false);
+                 }
+                 b.el.remove();ballList.splice(i,1);
+                 continue;
+             }
+             if(b.y>window.innerHeight){b.el.remove();ballList.splice(i,1);}
+         }
+     },20);
+ }
+ window.onload=startGameLoop;
+ </script>
+ </body>
+ </html>

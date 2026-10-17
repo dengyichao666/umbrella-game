@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>灯泡大作战 - 切问号不如切灯泡</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: linear-gradient(180deg, #1b2540 0%, #2e3a6b 100%);
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    color: #fff;
+    user-select: none;
+  }
+  #gameCanvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    background:
+      radial-gradient(circle at 20% 20%, rgba(255,255,255,0.08), transparent 25%),
+      radial-gradient(circle at 80% 70%, rgba(255,215,0,0.12), transparent 30%),
+      linear-gradient(180deg, #0f1630, #1f2a55);
+  }
+  .hud {
+    position: fixed;
+    top: 12px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 18px;
+    font-size: 20px;
+    font-weight: bold;
+    pointer-events: none;
+    z-index: 5;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  }
+  .hud .score { color: #ffd84d; }
+  .hud .lives { color: #ff6b6b; }
+  .hud .time { color: #74c0ff; }
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+  .panel {
+    background: #fff;
+    color: #222;
+    padding: 28px 34px;
+    border-radius: 18px;
+    text-align: center;
+    min-width: 280px;
+    box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+  }
+  .panel h1 {
+    font-size: 26px;
+    margin-bottom: 10px;
+    color: #1f2a55;
+  }
+  .panel p {
+    font-size: 16px;
+    margin-bottom: 14px;
+    line-height: 1.7;
+  }
+  .panel .tips {
+    background: #fff7d6;
+    border-left: 4px solid #ffd84d;
+    padding: 10px 12px;
+    text-align: left;
+    margin: 12px 0 18px;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #444;
+  }
+  button {
+    background: linear-gradient(135deg, #ffb347, #ff7a59);
+    color: #fff;
+    border: none;
+    padding: 12px 26px;
+    font-size: 18px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: bold;
+    letter-spacing: 1px;
+    box-shadow: 0 8px 18px rgba(255,122,89,0.35);
+  }
+  button:hover { filter: brightness(1.08); }
+  .result {
+    font-size: 22px;
+    margin: 14px 0;
+    color: #ff7a59;
+    font-weight: bold;
+  }
+  .slash-fx {
+    position: fixed;
+    pointer-events: none;
+    font-size: 28px;
+    font-weight: bold;
+    z-index: 8;
+    text-shadow: 0 0 10px rgba(255,255,255,0.8);
+  }
+</style>
+</head>
+<body>
+
+<div class="hud">
+  <div class="score">得分：<span id="scoreText">0</span></div>
+  <div class="time">时间：<span id="timeText">45</span>s</div>
+  <div class="lives">生命：<span id="livesText">❤❤❤</span></div>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<div class="overlay" id="startOverlay">
+  <div class="panel">
+    <h1>🪙 灯泡大作战</h1>
+    <p>参考PPT中的“能力测试”画面做的课堂小游戏</p >
+    <div class="tips">
+      ✅ 切灯泡得分<br>
+      ❌ 切问号扣血<br>
+      ⏱ 45秒一局，看你能得多少分
+    </div>
+    <button id="startBtn">开始游戏</button>
+  </div>
+</div>
+
+<div class="overlay" id="endOverlay" style="display:none;">
+  <div class="panel">
+    <h1>本局结束</h1>
+    <div class="result">最终得分：<span id="finalScore">0</span></div>
+    <p id="endComment">继续保持，课后可以去完成正式能力测试。</p >
+    <button id="restartBtn">再来一局</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const scoreText = document.getElementById('scoreText');
+  const timeText = document.getElementById('timeText');
+  const livesText = document.getElementById('livesText');
+  const startOverlay = document.getElementById('startOverlay');
+  const endOverlay = document.getElementById('endOverlay');
+  const finalScore = document.getElementById('finalScore');
+  const startBtn = document.getElementById('startBtn');
+  const restartBtn = document.getElementById('restartBtn');
+
+  let W, H;
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  let score = 0;
+  let lives = 3;
+  let timeLeft = 45;
+  let running = false;
+  let spawnTimer = 0;
+  let items = [];
+  let trail = [];
+  let particles = [];
+  let lastTime = 0;
+
+  function updateHUD() {
+    scoreText.textContent = score;
+    timeText.textContent = timeLeft;
+    livesText.textContent = '❤'.repeat(Math.max(0, lives)) || '—';
+  }
+
+  function resetGame() {
+    score = 0;
+    lives = 3;
+    timeLeft = 45;
+    items = [];
+    trail = [];
+    particles = [];
+    spawnTimer = 0;
+    updateHUD();
+  }
+
+  function startGame() {
+    resetGame();
+    running = true;
+    startOverlay.style.display = 'none';
+    endOverlay.style.display = 'none';
+    lastTime = performance.now();
+
+    const timer = setInterval(() => {
+      if (!running) return;
+      timeLeft--;
+      updateHUD();
+      if (timeLeft <= 0) {
+        clearInterval(timer);
+        endGame();
+      }
+    }, 1000);
+
+    requestAnimationFrame(loop);
+  }
+
+  function endGame() {
+    running = false;
+    finalScore.textContent = score;
+    endOverlay.style.display = 'flex';
+  }
+
+  function spawnItem() {
+    const fromLeft = Math.random() < 0.5;
+    const x = fromLeft ? -60 : W + 60;
+    const y = H + 40;
+    const targetY = 80 + Math.random() * (H * 0.45);
+    const power = 17 + Math.random() * 6;
+    const vx = (fromLeft ? 1 : -1) * (3 + Math.random() * 2);
+    const vy = -power;
+    const type = Math.random() < 0.55 ? 'bulb' : 'question';
+
+    items.push({
+      type,
+      x,
+      y,
+      vx,
+      vy,
+      gravity: 0.33,
+      radius: type === 'bulb' ? 34 : 30,
+      rotation: Math.random() * Math.PI * 2,
+      vr: (Math.random() - 0.5) * 0.12,
+      passed: false,
+      targetY
+    });
+  }
+
+  function addTrail(x, y) {
+    trail.push({ x, y, life: 18 });
+    if (trail.length > 40) trail.shift();
+  }
+
+  canvas.addEventListener('mousemove', e => {
+    if (!running) return;
+    addTrail(e.clientX, e.clientY);
+  });
+  canvas.addEventListener('touchmove', e => {
+    if (!running) return;
+    e.preventDefault();
+    for (const t of e.touches) addTrail(t.clientX, t.clientY);
+  }, { passive: false });
+
+  function checkSlash() {
+    if (trail.length < 4) return;
+    for (let i = 3; i < trail.length; i++) {
+      const a = trail[i - 3];
+      const b = trail[i];
+      for (const it of items) {
+        if (it.dead) continue;
+        const d = pointToSegmentDistance(it.x, it.y, a.x, a.y, b.x, b.y);
+        if (d < it.radius + 6) {
+          slashItem(it);
+          break;
+        }
+      }
+    }
+  }
+
+  function pointToSegmentDistance(px, py, ax, ay, bx, by) {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) return Math.hypot(px - ax, py - ay);
+    let t = ((px - ax) * dx + (py - ay) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const cx = ax + t * dx;
+    const cy = ay + t * dy;
+    return Math.hypot(px - cx, py - cy);
+  }
+
+  function slashItem(it) {
+    it.dead = true;
+    if (it.type === 'bulb') {
+      score += 10;
+      spawnParticles(it.x, it.y, '#ffd84d', 14);
+      showFloatingText(it.x, it.y, '+10', '#ffd84d');
+    } else {
+      score = Math.max(0, score - 5);
+      lives--;
+      spawnParticles(it.x, it.y, '#ff6b6b', 18);
+      showFloatingText(it.x, it.y, '-1 ❤', '#ff6b6b');
+      if (lives <= 0) {
+        lives = 0;
+        endGame();
+      }
+    }
+    updateHUD();
+  }
+
+  function spawnParticles(x, y, color, count) {
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 2 + Math.random() * 4;
+      particles.push({
+        x, y,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s - 1,
+        life: 30 + Math.random() * 10,
+        color,
+        size: 3 + Math.random() * 3
+      });
+    }
+  }
+
+  function showFloatingText(x, y, text, color) {
+    const div = document.createElement('div');
+    div.className = 'slash-fx';
+    div.textContent = text;
+    div.style.left = x + 'px';
+    div.style.top = y + 'px';
+    div.style.color = color;
+    document.body.appendChild(div);
+    let opacity = 1;
+    let ty = 0;
+    const anim = () => {
+      ty -= 1.2;
+      opacity -= 0.03;
+      div.style.transform = `translate(-50%, ${ty}px)`;
+      div.style.opacity = opacity;
+      if (opacity > 0) requestAnimationFrame(anim);
+      else div.remove();
+    };
+    requestAnimationFrame(anim);
+  }
+
+  function loop(now) {
+    if (!running) return;
+    const dt = Math.min(32, now - lastTime);
+    lastTime = now;
+
+    ctx.clearRect(0, 0, W, H);
+    drawBackground();
+
+    spawnTimer += dt;
+    const interval = Math.max(420, 900 - (45 - timeLeft) * 12);
+    if (spawnTimer > interval) {
+      spawnTimer = 0;
+      spawnItem();
+      if (Math.random() < 0.35) spawnItem();
+    }
+
+    for (const it of items) {
+      if (it.dead) continue;
+      it.vy += it.gravity;
+      it.x += it.vx;
+      it.y += it.vy;
+      it.rotation += it.vr;
+      if (it.y > H + 80) {
+        it.dead = true;
+      }
+      drawItem(it);
+    }
+    items = items.filter(it => !it.dead || it.keep);
+
+    checkSlash();
+
+    for (let i = 0; i < trail.length; i++) {
+      trail[i].life--;
+    }
+    trail = trail.filter(t => t.life > 0);
+    drawTrail();
+
+    for (const p of particles) {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.18;
+      p.life--;
+      ctx.beginPath();
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = Math.max(0, p.life / 40);
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    particles = particles.filter(p => p.life > 0);
+
+    requestAnimationFrame(loop);
+  }
+
+  function drawBackground() {
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    for (let i = 0; i < 40; i++) {
+      const x = (i * 137.5) % W;
+      const y = (i * 89.3) % H;
+      ctx.fillStyle = i % 2 ? '#74c0ff' : '#ffd84d';
+      ctx.beginPath();
+      ctx.arc(x, y, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawTrail() {
+    if (trail.length < 2) return;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (let i = 1; i < trail.length; i++) {
+      const a = trail[i - 1];
+      const b = trail[i];
+      ctx.strokeStyle = `rgba(120, 220, 255, ${(i / trail.length) * 0.85})`;
+      ctx.lineWidth = 6 * (i / trail.length);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawItem(it) {
+    ctx.save();
+    ctx.translate(it.x, it.y);
+    ctx.rotate(it.rotation);
+
+    if (it.type === 'bulb') {
+      const glow = ctx.createRadialGradient(0, 0, 8, 0, 0, 44);
+      glow.addColorStop(0, 'rgba(255, 216, 77, 0.55)');
+      glow.addColorStop(1, 'rgba(255, 216, 77, 0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(0, 0, 44, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffd84d';
+      ctx.beginPath();
+      ctx.arc(0, -4, 22, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#f2a900';
+      ctx.fillRect(-10, 14, 20, 8);
+
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.beginPath();
+      ctx.arc(-7, -10, 5, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = '#222';
+      ctx.fillRect(-22, -22, 44, 44);
+      ctx.strokeStyle = '#ff6b6b';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(-22, -22, 44, 44);
+
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 28px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('?', 0, 1);
+    }
+    ctx.restore();
+  }
+
+  startBtn.addEventListener('click', startGame);
+  restartBtn.addEventListener('click', startGame);
+})();
+</script>
+
+</body>
+</html>
